@@ -2,7 +2,13 @@ from flask import Flask, jsonify, request, render_template_string
 
 app = Flask(__name__)
 
-# This is our Shared CSS to keep every page looking modern and consistent
+# This is our "Temporary Database" (resets if Render sleeps, but works live!)
+student_list = [
+    {"name": "Ramnel Baynona Jr.", "grade": 95, "section": "Arduino", "remarks": "Pass"},
+    {"name": "Juan Dela Cruz", "grade": 82, "section": "Zechariah", "remarks": "Pass"}
+]
+
+# Using your modern Shared CSS
 BASE_STYLE = """
 <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -16,7 +22,7 @@ BASE_STYLE = """
         border: 1px solid rgba(255, 255, 255, 0.1);
         padding: 2.5rem; border-radius: 24px;
         box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
-        text-align: center; width: 100%; max-width: 500px;
+        text-align: center; width: 100%; max-width: 600px;
     }
     h1 { font-size: 1.5rem; margin-bottom: 1rem; color: #38bdf8; }
     .data-box { 
@@ -27,12 +33,18 @@ BASE_STYLE = """
     .btn {
         display: inline-block; background: #38bdf8; color: #0f172a; 
         padding: 10px 20px; border-radius: 8px; text-decoration: none;
-        font-weight: bold; margin-top: 10px; transition: 0.3s;
+        font-weight: bold; margin-top: 10px; transition: 0.3s; border: none; cursor: pointer;
     }
     .btn:hover { background: #7dd3fc; transform: translateY(-2px); }
-    .status-badge {
-        padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: bold;
-    }
+    
+    /* New styles for the Add Student form and Table */
+    form { background: rgba(0,0,0,0.2); padding: 15px; border-radius: 15px; margin-bottom: 20px; text-align: left; }
+    .form-input { width: 100%; padding: 10px; margin: 5px 0 15px 0; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th { color: #38bdf8; border-bottom: 1px solid #334155; padding: 10px; text-align: left; font-size: 0.8rem; }
+    td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem; text-align: left; }
+    
+    .status-badge { padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: bold; }
     .Pass { background: #065f46; color: #34d399; }
     .Fail { background: #7f1d1d; color: #f87171; }
 </style>
@@ -40,39 +52,77 @@ BASE_STYLE = """
 
 @app.route('/')
 def home():
+    # Calculate Average for Summary Feature
+    grades = [s['grade'] for s in student_list]
+    avg = sum(grades) / len(grades) if grades else 0
+    
+    # Building the table rows dynamically
+    rows = ""
+    for s in student_list:
+        rows += f"""
+        <tr>
+            <td>{s['name']}</td>
+            <td>{s['grade']}</td>
+            <td><span class="status-badge {s['remarks']}">{s['remarks']}</span></td>
+        </tr>
+        """
+
     return render_template_string(f"""
         {BASE_STYLE}
         <div class="card">
-            <span style="font-size: 3rem;">🖥️</span>
-            <h1>Student API Dashboard</h1>
-            <p>Welcome, Professor! Use the buttons below to test the API logic.</p>
-            <div style="display: grid; gap: 10px; margin-top: 20px;">
-                <a href="/student?grade=85" class="btn">Test Pass (85)</a>
-                <a href="/student?grade=60" class="btn">Test Fail (60)</a>
-                <a href="/students" class="btn" style="background: #94a3b8;">View All Students</a>
+            <h1>🚀 Student Management API</h1>
+            <p style="margin-bottom: 20px; opacity: 0.8;">Summary: <b>{len(student_list)}</b> Students | Avg: <b>{avg:.1f}</b></p>
+            
+            <form action="/add" method="POST">
+                <label style="font-size: 0.7rem; color: #38bdf8; font-weight: bold;">NAME</label>
+                <input type="text" name="name" class="form-input" placeholder="Enter student name" required>
+                <label style="font-size: 0.7rem; color: #38bdf8; font-weight: bold;">GRADE</label>
+                <input type="number" name="grade" class="form-input" placeholder="Enter grade (0-100)" required>
+                <button type="submit" class="btn" style="width: 100%;">Add Student to API</button>
+            </form>
+
+            <table>
+                <thead>
+                    <tr><th>STUDENT</th><th>GRADE</th><th>STATUS</th></tr>
+                </thead>
+                <tbody>
+                    {rows}
+                </tbody>
+            </table>
+
+            <div style="margin-top: 20px;">
+                <a href="/students" class="btn" style="background: #94a3b8;">View Raw JSON Data</a>
             </div>
-            <p style="margin-top: 20px; font-size: 0.7rem; opacity: 0.5;">Developed by Ramnel Baynona Jr.</p>
+            <p style="margin-top: 20px; font-size: 0.6rem; opacity: 0.4;">Developed by Ramnel Baynona Jr.</p>
         </div>
     """)
+
+@app.route('/add', methods=['POST'])
+def add_student():
+    name = request.form.get('name')
+    grade = int(request.form.get('grade', 0))
+    remarks = "Pass" if grade >= 75 else "Fail"
+    
+    student_list.append({
+        "name": name, 
+        "grade": grade, 
+        "section": "Arduino", 
+        "remarks": remarks
+    })
+    return home() # Reload home with the new data
 
 @app.route('/student')
 def get_student():
     grade = int(request.args.get('grade', 0))
     remarks = "Pass" if grade >= 75 else "Fail"
-    data = {
-        "name": "Ramnel Baynona Jr.",
-        "grade": grade,
-        "section": "Arduino",
-        "remarks": remarks
-    }
+    data = {"name": "Search Result", "grade": grade, "section": "Arduino", "remarks": remarks}
     
-    # Returning UI + JSON instead of just JSON
     return render_template_string(f"""
         {BASE_STYLE}
         <div class="card">
-            <h1>Result for {data['name']}</h1>
+            <h1>API Logic Analysis</h1>
             <div class="data-box">
-                <p><strong>Grade:</strong> {data['grade']}</p>
+                <p><strong>Grade:</strong> {grade}</p>
                 <p><strong>Status:</strong> <span class="status-badge {remarks}">{remarks}</span></p>
                 <hr style="margin: 10px 0; opacity: 0.2;">
                 <pre>{jsonify(data).get_data(as_text=True)}</pre>
@@ -83,16 +133,12 @@ def get_student():
 
 @app.route('/students')
 def get_all():
-    students = [
-        {"id": 1, "name": "Juan", "grade": 85, "section": "Zechariah"},
-        {"id": 2, "name": "Maria", "grade": 90, "section": "Zechariah"}
-    ]
     return render_template_string(f"""
         {BASE_STYLE}
         <div class="card">
-            <h1>All Registered Students</h1>
+            <h1>All Students JSON</h1>
             <div class="data-box">
-                <pre>{jsonify(students).get_data(as_text=True)}</pre>
+                <pre>{jsonify(student_list).get_data(as_text=True)}</pre>
             </div>
             <a href="/" class="btn">Back to Dashboard</a>
         </div>
