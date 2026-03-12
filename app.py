@@ -73,7 +73,7 @@ def get_student():
         grade = 0
     remarks = "Pass" if grade >= 75 else "Fail"
     return jsonify({
-        "name": "Ramnel Baynona Jr.",
+        "name": "Ramnel Bayona Jr.",
         "grade": grade,
         "section": "Arduino",
         "remarks": remarks,
@@ -89,3 +89,4 @@ def get_all():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
