@@ -10,26 +10,28 @@ students = [
 
 @app.route('/')
 def home():
-    return "Welcome to my Flask API!" [cite: 223]
+    return "Welcome to my Flask API!"
 
 @app.route('/student')
 def get_student():
-    # Get grade from query parameter, default to 0 if not provided [cite: 28]
-    grade = int(request.args.get('grade', 0))
+    # Get grade from query parameter, default to 0 if not provided
+    # request.args.get returns a string, so we convert to int
+    grade_val = request.args.get('grade', '0')
+    grade = int(grade_val)
     
-    # Determine pass or fail logic (75 is the passing mark) [cite: 30]
+    # Determine pass or fail logic (75 is the passing mark)
     remarks = "Pass" if grade >= 75 else "Fail"
     
     return jsonify({
         "name": "Ramnel Baynona Jr.",
-        "grade": BSIT 3,
+        "grade": grade,
         "section": "Arduino",
         "remarks": remarks
-    }) [cite: 31, 36]
+    })
 
 @app.route('/students', methods=['GET'])
 def get_students():
-    return jsonify(students) [cite: 94]
+    return jsonify(students)
 
 if __name__ == '__main__':
-    app.run(debug=True) [cite: 96]
+    app.run(debug=True)
