@@ -1,12 +1,19 @@
-from flask import Flask, jsonify, request, render_template_string, redirect, url_for
+from flask import Flask, request, render_template_string, redirect, url_for
+import mysql.connector
 
 app = Flask(__name__)
 
-# Temporary Database
-student_list = [
-    {"id": 1, "name": "Ramnel Bayona Jr.", "grade": 95, "section": "Arduino", "remarks": "Pass"},
-    {"name": "Juan Dela Cruz", "grade": 82, "section": "Zechariah", "remarks": "Pass"}
-]
+# --- DATABASE CONNECTION SETTINGS ---
+# Using the credentials you found in your Byet.host File Manager
+db_config = {
+    'host': 'sql200.byethost22.com', 
+    'user': 'b22_41078297',
+    'password': 'c130hercules', 
+    'database': 'b22_41078297_gitrepo'  # Updated to your repository database name
+}
+
+def get_db_connection():
+    return mysql.connector.connect(**db_config)
 
 BASE_STYLE = """
 <style>
@@ -36,7 +43,6 @@ BASE_STYLE = """
         font-weight: bold; transition: 0.3s; border: none; cursor: pointer; font-size: 0.85rem;
     }
     .btn:hover { opacity: 0.9; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(139, 92, 246, 0.4); }
-    .btn-danger { background: linear-gradient(to right, #ef4444, #b91c1c); }
     .btn-clear { background: #334155; margin-top: 10px; }
     
     form { background: rgba(255,255,255,0.03); padding: 20px; border-radius: 18px; margin-bottom: 20px; text-align: left; border: 1px solid rgba(255,255,255,0.05); }
@@ -57,17 +63,27 @@ BASE_STYLE = """
 
 @app.route('/')
 def home():
-    grades = [s['grade'] for s in student_list]
-    avg = sum(grades) / len(grades) if grades else 0
-    
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM students")
+        students = cursor.fetchall()
+        
+        cursor.execute("SELECT AVG(grade) as average FROM students")
+        avg_res = cursor.fetchone()
+        avg = avg_res['average'] if avg_res['average'] else 0
+        conn.close()
+    except Exception as e:
+        return f"Database Connection Error: {e}"
+
     rows = ""
-    for index, s in enumerate(student_list):
+    for s in students:
         rows += f"""
         <tr>
             <td>{s['name']}</td>
             <td>{s['grade']}</td>
             <td><span class="status-badge {s['remarks']}">{s['remarks']}</span></td>
-            <td><a href="/delete/{index}" class="del-link" title="Delete Student">×</a></td>
+            <td><a href="/delete/{s['id']}" class="del-link" title="Delete Student">×</a></td>
         </tr>
         """
 
@@ -76,7 +92,7 @@ def home():
         <div class="card">
             <h1>🚀 Student Data Console</h1>
             <div class="stats-bar">
-                <b>{len(student_list)}</b> Records Found | Class Average: <b>{avg:.1f}%</b>
+                <b>{len(students)}</b> Records Found | Class Average: <b>{avg:.1f}%</b>
             </div>
             
             <form action="/add" method="POST">
@@ -107,24 +123,43 @@ def add_student():
     name = request.form.get('name')
     grade = int(request.form.get('grade', 0))
     remarks = "Pass" if grade >= 75 else "Fail"
-    student_list.append({"name": name, "grade": grade, "section": "Arduino", "remarks": remarks})
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO students (name, grade, section, remarks) VALUES (%s, %s, %s, %s)", 
+                   (name, grade, "Arduino", remarks))
+    conn.commit()
+    conn.close()
     return redirect(url_for('home'))
 
 @app.route('/delete/<int:student_id>')
 def delete_student(student_id):
-    if 0 <= student_id < len(student_list):
-        student_list.pop(student_id)
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM students WHERE id = %s", (student_id,))
+    conn.commit()
+    conn.close()
     return redirect(url_for('home'))
 
 @app.route('/clear')
 def clear_students():
-    student_list.clear()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("TRUNCATE TABLE students")
+    conn.commit()
+    conn.close()
     return redirect(url_for('home'))
 
 @app.route('/students')
 def get_all():
     import json
-    formatted_json = json.dumps(student_list, indent=4)
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM students")
+    students = cursor.fetchall()
+    conn.close()
+    
+    formatted_json = json.dumps(students, indent=4, default=str)
     return render_template_string(f"""
         {BASE_STYLE}
         <div class="card">
