@@ -1,19 +1,19 @@
-from flask import Flask, request, render_template_string, redirect, url_for
+from flask import Flask, request, render_template_string, redirect, url_for, send_file
 import sqlite3
 import os
 
 app = Flask(__name__)
 
 # --- DATABASE CONNECTION SETTINGS ---
-# Switched to SQLite for Render compatibility while keeping your structure
+# This file will be created automatically in the same folder as app.py
 DB_FILE = 'students.db'
 
 def get_db_connection():
     conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row  # Keeps the 'dictionary=True' style behavior
+    conn.row_factory = sqlite3.Row  
     return conn
 
-# This ensures the table exists so the app doesn't crash on load
+# Ensures the database and table are created the moment the app starts
 def init_db():
     conn = get_db_connection()
     conn.execute('''
@@ -47,17 +47,13 @@ BASE_STYLE = """
     }
     h1 { font-size: 1.8rem; margin-bottom: 1rem; color: #a5b4fc; text-shadow: 0 2px 10px rgba(165, 180, 252, 0.3); }
     .stats-bar { background: rgba(255,255,255,0.05); padding: 10px; border-radius: 12px; margin-bottom: 20px; font-size: 0.9rem; border: 1px solid rgba(255,255,255,0.1); }
-    .data-box { 
-        background: #020617; padding: 15px; border-radius: 12px; 
-        text-align: left; margin: 20px 0; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;
-        border: 1px solid #334155; color: #38bdf8;
-    }
     .btn {
         display: inline-block; background: linear-gradient(to right, #6366f1, #a855f7); color: white; 
         padding: 10px 18px; border-radius: 10px; text-decoration: none;
         font-weight: bold; transition: 0.3s; border: none; cursor: pointer; font-size: 0.85rem;
     }
     .btn:hover { opacity: 0.9; transform: translateY(-2px); box-shadow: 0 5px 15px rgba(139, 92, 246, 0.4); }
+    .btn-download { background: #10b981; margin-top: 10px; }
     .btn-clear { background: #334155; margin-top: 10px; }
     
     form { background: rgba(255,255,255,0.03); padding: 20px; border-radius: 18px; margin-bottom: 20px; text-align: left; border: 1px solid rgba(255,255,255,0.05); }
@@ -70,9 +66,6 @@ BASE_STYLE = """
     .status-badge { padding: 4px 10px; border-radius: 8px; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; }
     .Pass { background: rgba(34, 197, 94, 0.2); color: #4ade80; border: 1px solid #22c55e; }
     .Fail { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444; }
-    
-    .del-link { color: #f87171; text-decoration: none; font-weight: bold; font-size: 1.2rem; transition: 0.2s; }
-    .del-link:hover { color: #ef4444; }
 </style>
 """
 
@@ -80,10 +73,7 @@ BASE_STYLE = """
 def home():
     try:
         conn = get_db_connection()
-        # Fetching all students
         students = conn.execute("SELECT * FROM students").fetchall()
-        
-        # Calculating average
         avg_res = conn.execute("SELECT AVG(grade) as average FROM students").fetchone()
         avg = avg_res['average'] if avg_res['average'] else 0
         conn.close()
@@ -97,7 +87,7 @@ def home():
             <td>{s['name']}</td>
             <td>{s['grade']}</td>
             <td><span class="status-badge {s['remarks']}">{s['remarks']}</span></td>
-            <td><a href="/delete/{s['id']}" class="del-link" title="Delete Student">×</a></td>
+            <td><a href="/delete/{s['id']}" style="color:#f87171; text-decoration:none; font-weight:bold;">×</a></td>
         </tr>
         """
 
@@ -126,6 +116,7 @@ def home():
 
             <div style="margin-top: 30px; display: flex; flex-direction: column; gap: 10px;">
                 <a href="/students" class="btn">View API (JSON Mode)</a>
+                <a href="/download" class="btn btn-download">⬇️ Download Database (.db)</a>
                 <a href="/clear" class="btn btn-clear" onclick="return confirm('Delete all records?')">Reset Database</a>
             </div>
             <p style="margin-top: 25px; font-size: 0.7rem; color: #6366f1; font-weight: bold; letter-spacing: 1px;">RAMNEL BAYONA JR. | ARDUINO SECTION</p>
@@ -139,7 +130,6 @@ def add_student():
     remarks = "Pass" if grade >= 75 else "Fail"
     
     conn = get_db_connection()
-    # In SQLite, we use ? instead of %s
     conn.execute("INSERT INTO students (name, grade, section, remarks) VALUES (?, ?, ?, ?)", 
                    (name, grade, "Arduino", remarks))
     conn.commit()
@@ -157,33 +147,26 @@ def delete_student(student_id):
 @app.route('/clear')
 def clear_students():
     conn = get_db_connection()
-    # SQLite uses DELETE FROM instead of TRUNCATE
     conn.execute("DELETE FROM students")
     conn.commit()
     conn.close()
     return redirect(url_for('home'))
 
+# --- FIX: DOWNLOAD THE ACTUAL DATABASE FILE ---
+@app.route('/download')
+def download_db():
+    if os.path.exists(DB_FILE):
+        return send_file(DB_FILE, as_attachment=True)
+    return "Database file not found yet. Add a student first!", 404
+
 @app.route('/students')
 def get_all():
     import json
     conn = get_db_connection()
-    students = conn.execute("SELECT * FROM students").fetchall()
+    students = [dict(s) for s in conn.execute("SELECT * FROM students").fetchall()]
     conn.close()
-    
-    # Convert list of Rows to list of dicts for JSON
-    student_list = [dict(s) for s in students]
-    formatted_json = json.dumps(student_list, indent=4)
-    
-    return render_template_string(f"""
-        {BASE_STYLE}
-        <div class="card">
-            <h1 style="color: #fbbf24;">Raw API Response</h1>
-            <div class="data-box">
-                <pre>{formatted_json}</pre>
-            </div>
-            <a href="/" class="btn">Return to Console</a>
-        </div>
-    """)
+    formatted_json = json.dumps(students, indent=4)
+    return f"<pre>{formatted_json}</pre>"
 
 if __name__ == '__main__':
     app.run(debug=True)
