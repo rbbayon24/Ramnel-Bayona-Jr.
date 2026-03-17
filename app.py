@@ -1,19 +1,34 @@
 from flask import Flask, request, render_template_string, redirect, url_for
-import mysql.connector
+import sqlite3
+import os
 
 app = Flask(__name__)
 
 # --- DATABASE CONNECTION SETTINGS ---
-# Using the credentials you found in your Byet.host File Manager
-db_config = {
-    'host': 'sql200.byethost22.com', 
-    'user': 'b22_41078297',
-    'password': 'c130hercules', 
-    'database': 'b22_41078297_gitrepo'  # Updated to your repository database name
-}
+# Switched to SQLite for Render compatibility while keeping your structure
+DB_FILE = 'students.db'
 
 def get_db_connection():
-    return mysql.connector.connect(**db_config)
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row  # Keeps the 'dictionary=True' style behavior
+    return conn
+
+# This ensures the table exists so the app doesn't crash on load
+def init_db():
+    conn = get_db_connection()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS students (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            grade INTEGER NOT NULL,
+            section TEXT NOT NULL,
+            remarks TEXT NOT NULL
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
 
 BASE_STYLE = """
 <style>
@@ -65,16 +80,15 @@ BASE_STYLE = """
 def home():
     try:
         conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM students")
-        students = cursor.fetchall()
+        # Fetching all students
+        students = conn.execute("SELECT * FROM students").fetchall()
         
-        cursor.execute("SELECT AVG(grade) as average FROM students")
-        avg_res = cursor.fetchone()
+        # Calculating average
+        avg_res = conn.execute("SELECT AVG(grade) as average FROM students").fetchone()
         avg = avg_res['average'] if avg_res['average'] else 0
         conn.close()
     except Exception as e:
-        return f"Database Connection Error: {e}"
+        return f"Database Error: {e}"
 
     rows = ""
     for s in students:
@@ -125,8 +139,8 @@ def add_student():
     remarks = "Pass" if grade >= 75 else "Fail"
     
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO students (name, grade, section, remarks) VALUES (%s, %s, %s, %s)", 
+    # In SQLite, we use ? instead of %s
+    conn.execute("INSERT INTO students (name, grade, section, remarks) VALUES (?, ?, ?, ?)", 
                    (name, grade, "Arduino", remarks))
     conn.commit()
     conn.close()
@@ -135,8 +149,7 @@ def add_student():
 @app.route('/delete/<int:student_id>')
 def delete_student(student_id):
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM students WHERE id = %s", (student_id,))
+    conn.execute("DELETE FROM students WHERE id = ?", (student_id,))
     conn.commit()
     conn.close()
     return redirect(url_for('home'))
@@ -144,8 +157,8 @@ def delete_student(student_id):
 @app.route('/clear')
 def clear_students():
     conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("TRUNCATE TABLE students")
+    # SQLite uses DELETE FROM instead of TRUNCATE
+    conn.execute("DELETE FROM students")
     conn.commit()
     conn.close()
     return redirect(url_for('home'))
@@ -154,12 +167,13 @@ def clear_students():
 def get_all():
     import json
     conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM students")
-    students = cursor.fetchall()
+    students = conn.execute("SELECT * FROM students").fetchall()
     conn.close()
     
-    formatted_json = json.dumps(students, indent=4, default=str)
+    # Convert list of Rows to list of dicts for JSON
+    student_list = [dict(s) for s in students]
+    formatted_json = json.dumps(student_list, indent=4)
+    
     return render_template_string(f"""
         {BASE_STYLE}
         <div class="card">
